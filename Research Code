@@ -32,11 +32,34 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Configuration & Initialization ---
-const firebaseConfig = JSON.parse(__firebase_config);
+let firebaseConfig;
+let appId = 'research-tracker-v1'; // Default App ID for your personal app
+
+// 1. Environment Detection
+// We check if we are in the Chat Canvas or on your Vercel App
+// @ts-ignore
+if (typeof __firebase_config !== 'undefined') {
+  // --- CANVAS ENVIRONMENT (Do not touch) ---
+  // @ts-ignore
+  firebaseConfig = JSON.parse(__firebase_config);
+  // @ts-ignore
+  if (typeof __app_id !== 'undefined') appId = __app_id;
+} else {
+  // --- FOR VERCEL / LOCAL DEPLOYMENT (EDIT THIS!) ---
+  // Paste your specific keys from Firebase Console -> Project Settings -> General -> Your Apps
+  firebaseConfig = {
+    apiKey: "PASTE_YOUR_API_KEY_HERE",
+    authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "PASTE_YOUR_PROJECT_ID",
+    storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
+    messagingSenderId: "PASTE_YOUR_SENDER_ID",
+    appId: "PASTE_YOUR_APP_ID"
+  };
+}
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Types ---
 type Category = 'research' | 'interview' | 'gate';
@@ -262,7 +285,9 @@ export default function ScholarsCompass() {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        // @ts-ignore
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          // @ts-ignore
           await signInWithCustomToken(auth, __initial_auth_token);
         } else {
           await signInAnonymously(auth);
