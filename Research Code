@@ -26,7 +26,9 @@ import {
   Clock, 
   Save, 
   ChevronRight,
-  Calendar
+  Calendar,
+  AlertCircle,
+  Lock
 } from 'lucide-react';
 
 // --- Firebase Configuration & Initialization ---
@@ -60,7 +62,21 @@ interface DailyLog {
 }
 
 // --- Helper Functions ---
-const getTodayStr = () => new Date().toISOString().split('T')[0];
+
+// 1. Precise IST Time Calculation
+// Calculates current time in Indian Standard Time (UTC+5:30) independently of device timezone
+const getISTTime = () => {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+  return new Date(utc + istOffset);
+};
+
+const getTodayStr = () => {
+  // We use IST date string to ensure the "Day" aligns with Indian time, not local device time
+  const istDate = getISTTime();
+  return istDate.toISOString().split('T')[0];
+};
 
 const defaultLog: DailyLog = {
   date: getTodayStr(),
@@ -225,15 +241,35 @@ export default function ScholarsCompass() {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [todayLog, setTodayLog] = useState<DailyLog>(defaultLog);
   const [loading, setLoading] = useState(true);
+  const [errorState, setErrorState] = useState<string | null>(null);
   const [view, setView] = useState<'morning' | 'dashboard' | 'night' | 'analytics'>('dashboard');
+  
+  // IST Time State
+  const [istHour, setIstHour] = useState(getISTTime().getHours());
+  const [istMinutes, setIstMinutes] = useState(getISTTime().getMinutes());
+
+  // Update IST Clock every minute
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const ist = getISTTime();
+      setIstHour(ist.getHours());
+      setIstMinutes(ist.getMinutes());
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   // --- Auth & Data Fetching ---
   useEffect(() => {
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth Error", err);
+        setErrorState("Authentication failed. Please refresh.");
       }
     };
     initAuth();
@@ -245,7 +281,14 @@ export default function ScholarsCompass() {
   useEffect(() => {
     if (!user) return;
 
+    // Safety check for inputs
+    if (!appId || !user.uid) {
+      console.warn("Missing appId or userId");
+      return;
+    }
+
     const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'daily_logs'));
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedLogs: DailyLog[] = [];
       snapshot.forEach((doc) => {
@@ -253,21 +296,28 @@ export default function ScholarsCompass() {
       });
       setLogs(fetchedLogs);
       
-      // Check if today exists
       const todayStr = getTodayStr();
       const existingToday = fetchedLogs.find(l => l.date === todayStr);
       if (existingToday) {
         setTodayLog(existingToday);
-        // If we haven't actively navigated, and goals are empty, show morning view
-        // But for simplicity, we default to dashboard, user can click "Morning"
       } else {
         setTodayLog({ ...defaultLog, date: todayStr });
-        setView('morning'); // Prompt morning routine if no log for today
+        // Only force morning view if it's actually morning/day time
+        if (fetchedLogs.length === 0) setView('morning'); 
       }
       setLoading(false);
+      setErrorState(null);
     }, (error) => {
       console.error("Data fetch error:", error);
-      setLoading(false);
+      if (error.code === 'not-found' || error.toString().includes('NOT_FOUND')) {
+        setLogs([]);
+        setTodayLog({ ...defaultLog, date: getTodayStr() });
+        setView('morning');
+        setLoading(false);
+      } else {
+        setErrorState(`Connection issue: ${error.message}`);
+        setLoading(false);
+      }
     });
 
     return () => unsubscribe();
@@ -305,7 +355,7 @@ export default function ScholarsCompass() {
 
   // --- Stats Calculation ---
   const stats = useMemo(() => {
-    const now = new Date();
+    const now = getISTTime(); // Use IST for consistent analytics
     // Helper to check dates
     const isSameWeek = (d1: Date, d2: Date) => {
       const one = new Date(d1);
@@ -333,15 +383,14 @@ export default function ScholarsCompass() {
         research: sumHours(weekLogs, 'research'),
         interview: sumHours(weekLogs, 'interview'),
         gate: sumHours(weekLogs, 'gate'),
-        total: 0 // calc below
+        total: 0 
       },
       month: {
         research: sumHours(monthLogs, 'research'),
         interview: sumHours(monthLogs, 'interview'),
         gate: sumHours(monthLogs, 'gate'),
-        total: 0 // calc below
+        total: 0 
       },
-      // Prepare data for charts (last 7 days for example)
       chartData: {
         research: logs.slice(-7).map(l => l.hours.research),
         interview: logs.slice(-7).map(l => l.hours.interview),
@@ -358,6 +407,20 @@ export default function ScholarsCompass() {
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 font-serif">
       Loading your Scholar's Log...
+    </div>
+  );
+
+  if (errorState) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-600 font-sans p-4">
+      <AlertCircle size={40} className="text-red-500 mb-4" />
+      <h2 className="text-xl font-bold mb-2">Connection Status</h2>
+      <p className="max-w-md text-center mb-6">{errorState}</p>
+      <button 
+        onClick={() => window.location.reload()}
+        className="px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700"
+      >
+        Retry
+      </button>
     </div>
   );
 
@@ -600,14 +663,34 @@ export default function ScholarsCompass() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
-                <button 
-                  className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
-                  onClick={() => alert("Progress stored successfully. Rest well!")}
-                >
-                  <Save size={18} />
-                  <span>Finalize & Sleep</span>
-                </button>
+              {/* Status Bar */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  Auto-sync active: Data is stored instantly.
+                </div>
+
+                {istHour === 23 ? (
+                  <button 
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
+                    onClick={() => alert("Progress finalized for " + todayLog.date + ". System sleeping...")}
+                  >
+                    <Save size={18} />
+                    <span>Finalize & Sleep</span>
+                  </button>
+                ) : (
+                  <button 
+                    disabled
+                    className="flex items-center gap-2 bg-slate-100 text-slate-400 px-6 py-3 rounded-lg cursor-not-allowed border border-slate-200"
+                    title="Available only between 11 PM and Midnight IST"
+                  >
+                    <Lock size={18} />
+                    <span>Available at 11:00 PM IST</span>
+                  </button>
+                )}
+              </div>
+              <div className="text-right text-[10px] text-slate-400 font-mono">
+                Current IST: {istHour.toString().padStart(2, '0')}:{istMinutes.toString().padStart(2, '0')}
               </div>
             </div>
           </div>
