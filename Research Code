@@ -48,12 +48,14 @@ if (typeof __firebase_config !== 'undefined') {
   // --- FOR VERCEL / LOCAL DEPLOYMENT (EDIT THIS!) ---
   // Paste your specific keys from Firebase Console -> Project Settings -> General -> Your Apps
   firebaseConfig = {
-    apiKey: "PASTE_YOUR_API_KEY_HERE",
-    authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "PASTE_YOUR_PROJECT_ID",
-    storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
-    messagingSenderId: "PASTE_YOUR_SENDER_ID",
-    appId: "PASTE_YOUR_APP_ID"
+   apiKey: "AIzaSyDWzyI8IwUPIui6NC4WztO3tPIT0MVP9eU",
+  authDomain: "research-tracker-6c03c.firebaseapp.com",
+  projectId: "research-tracker-6c03c",
+  storageBucket: "research-tracker-6c03c.firebasestorage.app",
+  messagingSenderId: "588669594482",
+  appId: "1:588669594482:web:8ec15eb791d16603e24beb",
+  measurementId: "G-71LZ1K6QH9"
+};
   };
 }
 
